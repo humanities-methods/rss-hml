@@ -5,6 +5,11 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,3 +31,22 @@ jobs:
           git add hml_feed.xml
           git diff --cached --quiet || git commit -m "Update RSS feed"
           git push
+
+      - name: Prepare Pages content
+        run: |
+          mkdir _site
+          cp hml_feed.xml _site/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
