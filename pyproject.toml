@@ -1,0 +1,19 @@
+[project]
+name = "rss-hml"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "feedgen>=1.0.0",
+    "requests>=2.33.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+pythonpath = ["src"]

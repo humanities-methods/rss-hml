@@ -1,0 +1,60 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0">
+  <channel>
+    <title>Humanities Methods in Librarianship</title>
+    <link>https://cuny.manifoldapp.org/journals/hml/issues</link>
+    <description>Articles from Humanities Methods in Librarianship, a peer-reviewed open access journal published by CUNY.</description>
+    <docs>http://www.rssboard.org/rss-specification</docs>
+    <generator>python-feedgen</generator>
+    <language>en</language>
+    <lastBuildDate>Sat, 04 Apr 2026 03:57:55 +0000</lastBuildDate>
+    <item>
+      <title>Editorial, Issue 0 (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/editorial-issue-0</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/editorial-issue-0</guid>
+      <pubDate>Wed, 28 Jan 2026 16:01:47 +0000</pubDate>
+    </item>
+    <item>
+      <title>Peer Reviewers (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/peer-reviewers</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/peer-reviewers</guid>
+      <pubDate>Wed, 25 Mar 2026 13:48:44 +0000</pubDate>
+    </item>
+    <item>
+      <title>Policies (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/policies-f75b82a3-2ab2-40fd-b490-c35e706e1493</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/policies-f75b82a3-2ab2-40fd-b490-c35e706e1493</guid>
+      <pubDate>Fri, 13 Feb 2026 19:44:38 +0000</pubDate>
+    </item>
+    <item>
+      <title>Style Guide (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/styleguide</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/styleguide</guid>
+      <pubDate>Mon, 05 Jan 2026 14:20:53 +0000</pubDate>
+    </item>
+    <item>
+      <title>Editorial Board (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/masthead</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/masthead</guid>
+      <pubDate>Wed, 08 Oct 2025 13:30:37 +0000</pubDate>
+    </item>
+    <item>
+      <title>Editor Statements, Issue 0 (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/editor-statements-issue-0</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/editor-statements-issue-0</guid>
+      <pubDate>Wed, 28 Jan 2026 15:50:42 +0000</pubDate>
+    </item>
+    <item>
+      <title>Contact Us (Issue 0)</title>
+      <link>https://cuny.manifoldapp.org/read/contactus</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/contactus</guid>
+      <pubDate>Wed, 08 Oct 2025 14:46:14 +0000</pubDate>
+    </item>
+    <item>
+      <title>Call for Papers (Issue 1)</title>
+      <link>https://cuny.manifoldapp.org/read/call-for-papers</link>
+      <guid isPermaLink="true">https://cuny.manifoldapp.org/read/call-for-papers</guid>
+      <pubDate>Thu, 26 Feb 2026 20:08:10 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
