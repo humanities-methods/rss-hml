@@ -55,6 +55,7 @@ def parse_project_articles(project_response, issue_number=""):
                 continue
             articles.append(
                 {
+                    "id": item["id"],
                     "title": attrs["title"],
                     "url": f"{BASE_URL}/read/{attrs['slug']}",
                     "author": attrs.get("creatorNames", ""),
@@ -64,6 +65,25 @@ def parse_project_articles(project_response, issue_number=""):
             )
 
     return articles
+
+
+def fetch_text_body(text_id):
+    """Fetch the full HTML body of a text by combining all its sections."""
+    sections_url = f"{API_URL}/texts/{text_id}/relationships/text_sections"
+    resp = requests.get(sections_url)
+    resp.raise_for_status()
+    sections = resp.json()["data"]
+
+    body_parts = []
+    for section in sections:
+        section_url = f"{sections_url}/{section['id']}"
+        resp = requests.get(section_url)
+        resp.raise_for_status()
+        body = resp.json()["data"]["attributes"].get("body", "")
+        if body:
+            body_parts.append(body)
+
+    return "\n".join(body_parts)
 
 
 def build_feed(articles):
@@ -89,6 +109,8 @@ def build_feed(articles):
             fe.author(name=article["author"])
         if article.get("date"):
             fe.pubDate(article["date"])
+        if article.get("body"):
+            fe.content(article["body"], type="CDATA")
 
     return fg.rss_str(pretty=True)
 
@@ -109,6 +131,8 @@ def fetch_all_articles():
         resp = requests.get(project_url)
         resp.raise_for_status()
         articles = parse_project_articles(resp.json(), issue_number=issue["number"])
+        for article in articles:
+            article["body"] = fetch_text_body(article["id"])
         all_articles.extend(articles)
 
     return all_articles
