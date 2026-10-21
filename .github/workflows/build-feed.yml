@@ -36,7 +36,8 @@ jobs:
         run: |
           mkdir _site
           cp hml_feed.xml _site/
-          echo "hml-feed.humanitiesmethods.org" > _site/CNAME
+          cp 404.html _site/
+          echo "rss.humanitiesmethods.org" > _site/CNAME
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
