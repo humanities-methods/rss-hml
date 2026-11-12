@@ -1,14 +1,16 @@
-from unittest.mock import patch
 from xml.etree import ElementTree
+
+import pytest
+import requests
 
 from hml_rss import (
     build_feed,
     fetch_all_articles,
     fetch_text_body,
+    main,
     parse_journal_issues,
     parse_project_articles,
 )
-
 
 JOURNAL_API_RESPONSE = {
     "data": [
@@ -213,79 +215,216 @@ def test_parse_project_articles_includes_issue_number():
     assert all(a["issue_number"] == "0" for a in articles)
 
 
-TEXT_SECTIONS_RESPONSE = {
-    "data": [
+API = "https://cuny.manifoldapp.org/api/v1"
+JOURNAL_URL = f"{API}/journals?filter[slug]=hml"
+PROJECT_0_URL = f"{API}/projects/proj-0-id?include=texts,resources,textCategories"
+PROJECT_1_URL = f"{API}/projects/proj-1-id?include=texts,resources,textCategories"
+
+PROJECT_1_API_RESPONSE = {
+    "data": {
+        "id": "proj-1-id",
+        "type": "projects",
+        "attributes": {
+            "title": "Humanities Methods in Librarianship, no. 1",
+            "slug": "hml-no-1",
+        },
+        "relationships": {
+            "texts": {"data": [{"id": "text-4", "type": "texts"}]},
+            "resources": {"data": []},
+            "textCategories": {"data": []},
+        },
+    },
+    "included": [
         {
-            "id": "section-1",
-            "type": "textSections",
+            "id": "text-4",
+            "type": "texts",
             "attributes": {
-                "name": "Editorial, Issue 0",
-                "kind": "section",
+                "title": "Reading the Catalog",
+                "slug": "reading-the-catalog",
+                "published": True,
+                "creatorNames": "Sam Roe",
+                "createdAt": "2026-02-26T00:00:00.000Z",
+                "position": 1,
             },
-        }
+        },
     ],
 }
 
-TEXT_SECTION_DETAIL_RESPONSE = {
-    "data": {
-        "id": "section-1",
-        "type": "textSections",
-        "attributes": {
-            "name": "Editorial, Issue 0",
-            "body": "<p>This is the <em>full text</em> of the editorial.</p>",
+
+def sections_url(text_id):
+    return f"{API}/texts/{text_id}/relationships/text_sections"
+
+
+def add_text(api, text_id, bodies):
+    """Register a text's section list and one detail response per section.
+
+    bodies maps section id -> the section's attributes dict.
+    """
+    api.add(
+        sections_url(text_id),
+        {
+            "data": [
+                {"id": section_id, "type": "textSections", "attributes": {}}
+                for section_id in bodies
+            ]
         },
-    },
-}
+    )
+    for section_id, attributes in bodies.items():
+        api.add(
+            f"{sections_url(text_id)}/{section_id}",
+            {
+                "data": {
+                    "id": section_id,
+                    "type": "textSections",
+                    "attributes": attributes,
+                }
+            },
+        )
 
 
-def test_fetch_text_body_returns_html():
-    def fake_get(url, **kwargs):
-        class FakeResp:
-            def raise_for_status(self):
-                pass
-
-        resp = FakeResp()
-        if url.endswith("/text_sections"):
-            resp.json = lambda: TEXT_SECTIONS_RESPONSE
-        else:
-            resp.json = lambda: TEXT_SECTION_DETAIL_RESPONSE
-        return resp
-
-    with patch("hml_rss.requests.get", side_effect=fake_get):
-        body = fetch_text_body("text-1")
-        assert "<p>This is the <em>full text</em> of the editorial.</p>" in body
+def add_whole_journal(api):
+    """Register every URL a full run needs: two issues, three published texts."""
+    api.add(JOURNAL_URL, JOURNAL_API_RESPONSE)
+    api.add(PROJECT_0_URL, PROJECT_API_RESPONSE)
+    api.add(PROJECT_1_URL, PROJECT_1_API_RESPONSE)
+    add_text(api, "text-1", {"sec-1a": {"body": "<p>Editorial body.</p>"}})
+    add_text(api, "text-2", {"sec-2a": {"body": "<p>Board body.</p>"}})
+    add_text(api, "text-4", {"sec-4a": {"body": "<p>Catalog body.</p>"}})
 
 
-def test_fetch_text_body_joins_multiple_sections():
-    multi_sections = {
-        "data": [
-            {"id": "sec-1", "type": "textSections", "attributes": {"name": "Part 1", "kind": "section"}},
-            {"id": "sec-2", "type": "textSections", "attributes": {"name": "Part 2", "kind": "section"}},
-        ],
-    }
+def test_fetch_text_body_returns_the_section_body(fake_api):
+    add_text(fake_api, "text-1", {"sec-1": {"body": "<p>The <em>full</em> text.</p>"}})
 
-    def fake_get(url, **kwargs):
-        class FakeResp:
-            def raise_for_status(self):
-                pass
+    assert fetch_text_body("text-1") == "<p>The <em>full</em> text.</p>"
 
-        resp = FakeResp()
-        if url.endswith("/text_sections"):
-            resp.json = lambda: multi_sections
-        elif "sec-1" in url:
-            resp.json = lambda: {
-                "data": {"id": "sec-1", "type": "textSections", "attributes": {"body": "<p>Part one.</p>"}},
-            }
-        else:
-            resp.json = lambda: {
-                "data": {"id": "sec-2", "type": "textSections", "attributes": {"body": "<p>Part two.</p>"}},
-            }
-        return resp
 
-    with patch("hml_rss.requests.get", side_effect=fake_get):
-        body = fetch_text_body("text-1")
-        assert "<p>Part one.</p>" in body
-        assert "<p>Part two.</p>" in body
+def test_fetch_text_body_joins_sections_in_order_with_newlines(fake_api):
+    add_text(
+        fake_api,
+        "text-1",
+        {
+            "sec-b": {"body": "<p>Part one.</p>"},
+            "sec-a": {"body": "<p>Part two.</p>"},
+        },
+    )
+
+    assert fetch_text_body("text-1") == "<p>Part one.</p>\n<p>Part two.</p>"
+
+
+def test_fetch_text_body_skips_sections_with_no_body(fake_api):
+    add_text(
+        fake_api,
+        "text-1",
+        {
+            "sec-1": {"body": "<p>Part one.</p>"},
+            "sec-2": {"body": ""},
+            "sec-3": {"name": "No body attribute at all"},
+            "sec-4": {"body": "<p>Part four.</p>"},
+        },
+    )
+
+    assert fetch_text_body("text-1") == "<p>Part one.</p>\n<p>Part four.</p>"
+
+
+def test_fetch_text_body_is_empty_for_a_text_with_no_sections(fake_api):
+    add_text(fake_api, "text-1", {})
+
+    assert fetch_text_body("text-1") == ""
+
+
+def test_fetch_text_body_raises_when_the_section_list_request_fails(fake_api):
+    fake_api.add(sections_url("text-1"), {"errors": ["boom"]}, status=500)
+
+    with pytest.raises(requests.HTTPError):
+        fetch_text_body("text-1")
+
+
+def test_fetch_text_body_raises_when_a_section_request_fails(fake_api):
+    add_text(fake_api, "text-1", {"sec-1": {"body": "<p>Part one.</p>"}})
+    fake_api.add(f"{sections_url('text-1')}/sec-1", {"errors": ["boom"]}, status=404)
+
+    with pytest.raises(requests.HTTPError):
+        fetch_text_body("text-1")
+
+
+def test_fetch_all_articles_returns_every_published_text_with_its_issue_and_body(
+    fake_api,
+):
+    add_whole_journal(fake_api)
+
+    assert fetch_all_articles() == [
+        {
+            "id": "text-1",
+            "title": "Editorial, Issue 0",
+            "url": "https://cuny.manifoldapp.org/read/editorial-issue-0",
+            "author": "Jane Doe",
+            "date": "2025-10-01T00:00:00.000Z",
+            "issue_number": "0",
+            "body": "<p>Editorial body.</p>",
+        },
+        {
+            "id": "text-2",
+            "title": "Editorial Board",
+            "url": "https://cuny.manifoldapp.org/read/masthead",
+            "author": "",
+            "date": "2025-10-01T00:00:00.000Z",
+            "issue_number": "0",
+            "body": "<p>Board body.</p>",
+        },
+        {
+            "id": "text-4",
+            "title": "Reading the Catalog",
+            "url": "https://cuny.manifoldapp.org/read/reading-the-catalog",
+            "author": "Sam Roe",
+            "date": "2026-02-26T00:00:00.000Z",
+            "issue_number": "1",
+            "body": "<p>Catalog body.</p>",
+        },
+    ]
+
+
+def test_fetch_all_articles_does_not_fetch_bodies_of_unpublished_texts(fake_api):
+    add_whole_journal(fake_api)
+
+    fetch_all_articles()
+
+    assert sections_url("text-3") not in fake_api.calls
+
+
+def test_fetch_all_articles_is_empty_when_the_journal_has_no_issues(fake_api):
+    fake_api.add(JOURNAL_URL, {"data": [], "included": []})
+
+    assert fetch_all_articles() == []
+
+
+@pytest.mark.parametrize(
+    "failing_url",
+    [JOURNAL_URL, PROJECT_1_URL],
+    ids=["journal request", "project request"],
+)
+def test_fetch_all_articles_raises_when_a_request_fails(fake_api, failing_url):
+    add_whole_journal(fake_api)
+    fake_api.add(failing_url, {"errors": ["boom"]}, status=503)
+
+    with pytest.raises(requests.HTTPError):
+        fetch_all_articles()
+
+
+def test_main_writes_the_feed_file_with_one_item_per_article(
+    fake_api, tmp_path, monkeypatch
+):
+    add_whole_journal(fake_api)
+    monkeypatch.chdir(tmp_path)
+
+    main()
+
+    root = ElementTree.parse(tmp_path / "hml_feed.xml").getroot()
+    titles = sorted(item.find("title").text for item in root.findall("channel/item"))
+    assert titles == [
+        "Editorial Board (Issue 0)",
+        "Editorial, Issue 0 (Issue 0)",
+        "Reading the Catalog (Issue 1)",
+    ]
 
 
 def test_build_feed_includes_content():
@@ -360,38 +499,3 @@ def test_build_feed_empty_articles():
     root = ElementTree.fromstring(xml_bytes)
     items = root.findall("channel/item")
     assert len(items) == 0
-
-
-def test_fetch_all_articles_calls_api_for_each_issue():
-    """fetch_all_articles should hit the journal API, then each issue's project API."""
-
-    def fake_get(url, **kwargs):
-        class FakeResp:
-            def raise_for_status(self):
-                pass
-
-        resp = FakeResp()
-        if "journals" in url:
-            resp.json = lambda: JOURNAL_API_RESPONSE
-        elif "text_sections" in url and "/" in url.split("text_sections")[1]:
-            resp.json = lambda: {
-                "data": {
-                    "id": "sec-1",
-                    "type": "textSections",
-                    "attributes": {"body": "<p>Body text.</p>"},
-                },
-            }
-        elif "text_sections" in url:
-            resp.json = lambda: {
-                "data": [
-                    {"id": "sec-1", "type": "textSections", "attributes": {"name": "Section 1"}},
-                ],
-            }
-        elif "projects" in url:
-            resp.json = lambda: PROJECT_API_RESPONSE
-        return resp
-
-    with patch("hml_rss.requests.get", side_effect=fake_get) as mock_get:
-        articles = fetch_all_articles()
-        assert len(articles) > 0
-        assert all("body" in a for a in articles)
