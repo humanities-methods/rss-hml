@@ -70,19 +70,6 @@ JOURNAL_API_RESPONSE = {
 }
 
 
-def test_parse_journal_issues_returns_list():
-    issues = parse_journal_issues(JOURNAL_API_RESPONSE)
-    assert len(issues) == 2
-
-
-def test_parse_journal_issues_extracts_fields():
-    issues = parse_journal_issues(JOURNAL_API_RESPONSE)
-    assert issues[0]["number"] == "0"
-    assert issues[0]["project_id"] == "proj-0-id"
-    assert issues[0]["project_slug"] == "hml-no-0"
-    assert issues[1]["number"] == "1"
-
-
 PROJECT_API_RESPONSE = {
     "data": {
         "id": "proj-0-id",
@@ -186,33 +173,209 @@ PROJECT_API_RESPONSE = {
 }
 
 
-def test_parse_project_articles_includes_published_texts():
-    articles = parse_project_articles(PROJECT_API_RESPONSE, issue_number="0")
-    titles = [a["title"] for a in articles]
-    assert "Editorial, Issue 0" in titles
+def journal(journal_id, attributes, relationships):
+    return {
+        "id": journal_id,
+        "type": "journals",
+        "attributes": attributes,
+        "relationships": relationships,
+    }
 
 
-def test_parse_project_articles_excludes_unpublished_texts():
-    articles = parse_project_articles(PROJECT_API_RESPONSE, issue_number="0")
-    titles = [a["title"] for a in articles]
-    assert "Submissions" not in titles
+def issue_refs(*issue_ids):
+    return {"data": [{"id": i, "type": "journalIssues"} for i in issue_ids]}
 
 
-def test_parse_project_articles_excludes_resources():
-    articles = parse_project_articles(PROJECT_API_RESPONSE, issue_number="0")
-    titles = [a["title"] for a in articles]
-    assert "Article 1" not in titles
+def included_issue(issue_id, number):
+    return {
+        "id": issue_id,
+        "type": "journalIssues",
+        "attributes": {
+            "number": number,
+            "projectId": f"proj-{number}",
+            "projectSlug": f"slug-{number}",
+            "publicationDate": "2025-01-01",
+        },
+    }
 
 
-def test_parse_project_articles_has_correct_urls():
-    articles = parse_project_articles(PROJECT_API_RESPONSE, issue_number="0")
-    text_article = next(a for a in articles if a["title"] == "Editorial, Issue 0")
-    assert text_article["url"] == "https://cuny.manifoldapp.org/read/editorial-issue-0"
+def issue_numbers(journal_response, **kwargs):
+    return [i["number"] for i in parse_journal_issues(journal_response, **kwargs)]
 
 
-def test_parse_project_articles_includes_issue_number():
-    articles = parse_project_articles(PROJECT_API_RESPONSE, issue_number="0")
-    assert all(a["issue_number"] == "0" for a in articles)
+def test_parse_journal_issues_extracts_each_issue_of_the_journal():
+    assert parse_journal_issues(JOURNAL_API_RESPONSE) == [
+        {
+            "id": "issue-0-id",
+            "number": "0",
+            "project_id": "proj-0-id",
+            "project_slug": "hml-no-0",
+            "publication_date": "2025-10-01",
+        },
+        {
+            "id": "issue-1-id",
+            "number": "1",
+            "project_id": "proj-1-id",
+            "project_slug": "hml-no-1",
+            "publication_date": "2026-02-26",
+        },
+    ]
+
+
+def test_parse_journal_issues_finds_the_journal_by_slug_when_slugs_is_missing():
+    response = {
+        "data": [journal("j1", {"slug": "hml"}, {"journalIssues": issue_refs("a")})],
+        "included": [included_issue("a", "7")],
+    }
+
+    assert issue_numbers(response) == ["7"]
+
+
+def test_parse_journal_issues_finds_the_journal_by_a_former_slug():
+    response = {
+        "data": [
+            journal(
+                "j1",
+                {"slug": "renamed", "slugs": ["renamed", "hml"]},
+                {"journalIssues": issue_refs("a")},
+            )
+        ],
+        "included": [included_issue("a", "7")],
+    }
+
+    assert issue_numbers(response) == ["7"]
+
+
+def test_parse_journal_issues_ignores_other_journals_in_the_response():
+    response = {
+        "data": [
+            journal("j1", {"slug": "other"}, {"journalIssues": issue_refs("a")}),
+            journal("j2", {"slug": "hml"}, {"journalIssues": issue_refs("b")}),
+        ],
+        "included": [included_issue("a", "LIV"), included_issue("b", "7")],
+    }
+
+    assert issue_numbers(response) == ["7"]
+
+
+def test_parse_journal_issues_is_empty_when_the_journal_is_not_in_the_response():
+    response = {
+        "data": [journal("j1", {"slug": "other"}, {"journalIssues": issue_refs("a")})],
+        "included": [included_issue("a", "LIV")],
+    }
+
+    assert parse_journal_issues(response) == []
+
+
+def test_parse_journal_issues_looks_up_the_slug_it_is_given():
+    response = {
+        "data": [
+            journal("j1", {"slug": "hml"}, {"journalIssues": issue_refs("a")}),
+            journal("j2", {"slug": "other"}, {"journalIssues": issue_refs("b")}),
+        ],
+        "included": [included_issue("a", "7"), included_issue("b", "LIV")],
+    }
+
+    assert issue_numbers(response, journal_slug="other") == ["LIV"]
+
+
+def test_parse_journal_issues_prefers_the_full_issue_list_over_recent_issues():
+    response = {
+        "data": [
+            journal(
+                "j1",
+                {"slug": "hml"},
+                {
+                    "journalIssues": issue_refs("a", "b"),
+                    "recentJournalIssues": issue_refs("b"),
+                },
+            )
+        ],
+        "included": [included_issue("a", "1"), included_issue("b", "2")],
+    }
+
+    assert issue_numbers(response) == ["1", "2"]
+
+
+def test_parse_journal_issues_is_empty_when_the_journal_has_no_relationships():
+    response = {
+        "data": [{"id": "j1", "type": "journals", "attributes": {"slug": "hml"}}],
+        "included": [included_issue("a", "7")],
+    }
+
+    assert parse_journal_issues(response) == []
+
+
+def test_parse_project_articles_returns_published_texts_only():
+    assert parse_project_articles(PROJECT_API_RESPONSE, issue_number="0") == [
+        {
+            "id": "text-1",
+            "title": "Editorial, Issue 0",
+            "url": "https://cuny.manifoldapp.org/read/editorial-issue-0",
+            "author": "Jane Doe",
+            "date": "2025-10-01T00:00:00.000Z",
+            "issue_number": "0",
+        },
+        {
+            "id": "text-2",
+            "title": "Editorial Board",
+            "url": "https://cuny.manifoldapp.org/read/masthead",
+            "author": "",
+            "date": "2025-10-01T00:00:00.000Z",
+            "issue_number": "0",
+        },
+    ]
+
+
+def test_parse_project_articles_ignores_published_items_that_are_not_texts():
+    response = {
+        "included": [
+            {
+                "id": "r1",
+                "type": "resources",
+                "attributes": {"title": "A PDF", "slug": "a-pdf", "published": True},
+            }
+        ]
+    }
+
+    assert parse_project_articles(response) == []
+
+
+def test_parse_project_articles_treats_a_text_without_a_published_flag_as_unpublished():
+    response = {
+        "included": [
+            {"id": "t1", "type": "texts", "attributes": {"title": "T", "slug": "t"}}
+        ]
+    }
+
+    assert parse_project_articles(response) == []
+
+
+def test_parse_project_articles_defaults_missing_author_date_and_issue_to_blank():
+    response = {
+        "included": [
+            {
+                "id": "t1",
+                "type": "texts",
+                "attributes": {"title": "T", "slug": "t", "published": True},
+            }
+        ]
+    }
+
+    assert parse_project_articles(response) == [
+        {
+            "id": "t1",
+            "title": "T",
+            "url": "https://cuny.manifoldapp.org/read/t",
+            "author": "",
+            "date": "",
+            "issue_number": "",
+        }
+    ]
+
+
+def test_parse_project_articles_is_empty_when_the_project_includes_nothing():
+    assert parse_project_articles({"data": {"id": "p", "type": "projects"}}) == []
 
 
 API = "https://cuny.manifoldapp.org/api/v1"
@@ -427,75 +590,112 @@ def test_main_writes_the_feed_file_with_one_item_per_article(
     ]
 
 
-def test_build_feed_includes_content():
-    articles = [
-        {
-            "title": "Editorial, Issue 0",
-            "url": "https://cuny.manifoldapp.org/read/editorial-issue-0",
-            "author": "Jane Doe",
-            "date": "2025-10-01T00:00:00.000Z",
-            "issue_number": "0",
-            "body": "<p>Full text here.</p>",
-        },
-    ]
-    xml_bytes = build_feed(articles)
-    root = ElementTree.fromstring(xml_bytes)
-    item = root.findall("channel/item")[0]
-    desc = item.find("description").text
-    assert "<p>Full text here.</p>" in desc
+ARTICLE = {
+    "id": "text-1",
+    "title": "Editorial, Issue 0",
+    "url": "https://cuny.manifoldapp.org/read/editorial-issue-0",
+    "author": "Jane Doe",
+    "date": "2025-10-01T00:00:00.000Z",
+    "issue_number": "0",
+    "body": "<p>Fish &amp; chips, <em>in full</em>.</p>",
+}
 
 
-SAMPLE_ARTICLES = [
-    {
-        "title": "Editorial, Issue 0",
-        "url": "https://cuny.manifoldapp.org/read/editorial-issue-0",
-        "author": "Jane Doe",
-        "date": "2025-10-01T00:00:00.000Z",
-        "issue_number": "0",
-    },
-    {
+def feed_items(articles):
+    root = ElementTree.fromstring(build_feed(articles))
+    return root.findall("channel/item")
+
+
+def only_item(**changes):
+    """Build a feed from ARTICLE with some fields changed; None removes a field."""
+    article = {k: v for k, v in (ARTICLE | changes).items() if v is not None}
+    (item,) = feed_items([article])
+    return item
+
+
+def test_build_feed_is_an_rss_document_describing_the_journal():
+    root = ElementTree.fromstring(build_feed([ARTICLE]))
+
+    assert root.tag == "rss"
+    channel = root.find("channel")
+    assert channel.find("title").text == "Humanities Methods in Librarianship"
+    assert (
+        channel.find("link").text == "https://cuny.manifoldapp.org/journals/hml/issues"
+    )
+    assert channel.find("language").text == "en"
+
+
+def test_build_feed_has_no_items_when_there_are_no_articles():
+    assert feed_items([]) == []
+
+
+def test_build_feed_has_one_item_per_article():
+    second = ARTICLE | {
         "title": "Editorial Board",
         "url": "https://cuny.manifoldapp.org/read/masthead",
-        "author": "",
-        "date": "2025-10-01T00:00:00.000Z",
-        "issue_number": "0",
-    },
-]
+    }
+
+    links = sorted(item.find("link").text for item in feed_items([ARTICLE, second]))
+
+    assert links == [
+        "https://cuny.manifoldapp.org/read/editorial-issue-0",
+        "https://cuny.manifoldapp.org/read/masthead",
+    ]
 
 
-def test_build_feed_returns_valid_xml():
-    xml_bytes = build_feed(SAMPLE_ARTICLES)
-    root = ElementTree.fromstring(xml_bytes)
-    assert root.tag == "rss"
+def test_build_feed_item_title_names_the_issue():
+    assert only_item().find("title").text == "Editorial, Issue 0 (Issue 0)"
 
 
-def test_build_feed_has_channel_info():
-    xml_bytes = build_feed(SAMPLE_ARTICLES)
-    root = ElementTree.fromstring(xml_bytes)
-    channel = root.find("channel")
-    assert channel is not None
-    assert "Humanities Methods" in channel.find("title").text
+@pytest.mark.parametrize("issue_number", ["", None], ids=["blank", "missing"])
+def test_build_feed_item_title_is_unchanged_without_an_issue_number(issue_number):
+    item = only_item(issue_number=issue_number)
+
+    assert item.find("title").text == "Editorial, Issue 0"
 
 
-def test_build_feed_has_items():
-    xml_bytes = build_feed(SAMPLE_ARTICLES)
-    root = ElementTree.fromstring(xml_bytes)
-    items = root.findall("channel/item")
-    assert len(items) == 2
+def test_build_feed_item_links_to_the_article():
+    item = only_item()
+
+    assert (
+        item.find("link").text == "https://cuny.manifoldapp.org/read/editorial-issue-0"
+    )
 
 
-def test_build_feed_item_has_title_and_link():
-    xml_bytes = build_feed(SAMPLE_ARTICLES)
-    root = ElementTree.fromstring(xml_bytes)
-    items = root.findall("channel/item")
-    titles = [item.find("title").text for item in items]
-    assert "Editorial, Issue 0 (Issue 0)" in titles
-    links = [item.find("link").text for item in items]
-    assert any("editorial-issue-0" in link for link in links)
+def test_build_feed_item_guid_is_the_article_url_as_a_permalink():
+    guid = only_item().find("guid")
+
+    assert guid.text == "https://cuny.manifoldapp.org/read/editorial-issue-0"
+    assert guid.get("isPermaLink") == "true"
 
 
-def test_build_feed_empty_articles():
-    xml_bytes = build_feed([])
-    root = ElementTree.fromstring(xml_bytes)
-    items = root.findall("channel/item")
-    assert len(items) == 0
+def test_build_feed_item_publication_date_comes_from_the_article_date():
+    assert only_item().find("pubDate").text == "Wed, 01 Oct 2025 00:00:00 +0000"
+
+
+@pytest.mark.parametrize("date", ["", None], ids=["blank", "missing"])
+def test_build_feed_item_has_no_publication_date_without_an_article_date(date):
+    assert only_item(date=date).find("pubDate") is None
+
+
+def test_build_feed_item_description_is_the_article_body_html():
+    description = only_item().find("description").text
+
+    assert description == "<p>Fish &amp; chips, <em>in full</em>.</p>"
+
+
+@pytest.mark.parametrize("body", ["", None], ids=["blank", "missing"])
+def test_build_feed_item_has_no_description_without_a_body(body):
+    assert only_item(body=body).find("description") is None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="feedgen drops an RSS author that has a name but no email, "
+    "so the author never reaches the feed outside the body text",
+)
+def test_build_feed_item_carries_the_author_name():
+    item = only_item()
+
+    outside_body = [el.text for el in item if el.tag != "description"]
+    assert any("Jane Doe" in (text or "") for text in outside_body)
