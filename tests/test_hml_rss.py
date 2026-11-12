@@ -643,6 +643,16 @@ def test_build_feed_has_one_item_per_article():
     ]
 
 
+def test_build_feed_lists_the_last_article_first():
+    first = ARTICLE | {"title": "First", "issue_number": ""}
+    second = ARTICLE | {"title": "Second", "issue_number": ""}
+    third = ARTICLE | {"title": "Third", "issue_number": ""}
+
+    titles = [item.find("title").text for item in feed_items([first, second, third])]
+
+    assert titles == ["Third", "Second", "First"]
+
+
 def test_build_feed_item_title_names_the_issue():
     assert only_item().find("title").text == "Editorial, Issue 0 (Issue 0)"
 
